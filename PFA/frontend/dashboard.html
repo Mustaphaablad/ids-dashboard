@@ -397,12 +397,11 @@ let severityChart, classChart;
 const severityCounts = { NONE:0, MEDIUM:0, HIGH:0, CRITICAL:0 };
 const classCounts = {};
 
-let apiBase   = localStorage.getItem('ids_api')   || 'http://localhost:5000';
+let apiBase   = localStorage.getItem('ids_api')   || 'https://ids-dashboard-production.up.railway.app';
 let authToken = localStorage.getItem('ids_token') || null;
 let currentUser = null;
 try { currentUser = JSON.parse(localStorage.getItem('ids_user') || 'null'); } catch(e){ currentUser = null; }
 let isRegisterMode = false;
-
 function authHeaders(){
   return authToken ? { 'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json' }
                     : { 'Content-Type': 'application/json' };
