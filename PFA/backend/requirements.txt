@@ -8,3 +8,5 @@ xgboost>=2.0
 scikit-learn>=1.4
 PyJWT>=2.8
 PyJWT>=2.8
+gunicorn>=23.0
+eventlet>=0.36
