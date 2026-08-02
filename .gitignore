@@ -1,0 +1,10 @@
+
+dataset unziped/
+model/
+test_dataset/
+
+__pycache__/
+*.pyc
+venv/
+.env
+node_modules/

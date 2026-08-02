@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Holcim — Network Security Console</title>
+<script src="vendor/socket.io.min.js" onerror="console.error('Failed to load vendor/socket.io.min.js — make sure the vendor/ folder is next to dashboard.html')"></script>
+<script src="vendor/chart.umd.js" onerror="console.error('Failed to load vendor/chart.umd.js — make sure the vendor/ folder is next to dashboard.html')"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:    #F2F4F3;
+    --surface:  #FFFFFF;
+    --ink:      #102A43;
+    --muted:    #64748B;
+    --line:     #E2E6E5;
+
+    --blue:     #1B4F9C;
+    --cyan:     #16A6C4;
+    --green:    #8DC63F;
+    --rule:     linear-gradient(90deg, var(--blue), var(--cyan), var(--green));
+
+    --none:     #4C9A2A;
+    --medium:   #C88400;
+    --high:     #CC6A1E;
+    --critical: #C13A2E;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+  }
+  .mono{ font-family: 'IBM Plex Mono', monospace; }
+  h1, h2, .display{ font-family:'Space Grotesk', sans-serif; }
+
+  /* ---------- Signature rule (brand gradient) ---------- */
+  .rule{ height:3px; background: var(--rule); }
+
+  /* ---------- Top bar ---------- */
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 16px 28px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand{ display:flex; align-items:center; gap:14px; }
+  .brand-logo{ height:30px; width:auto; display:block; }
+  .brand-logo.login-logo{ height:26px; }
+  .brand-dot{
+    width:9px; height:9px; border-radius:50%;
+    background: var(--muted);
+  }
+  .brand-dot.live{
+    background: var(--cyan);
+    box-shadow: 0 0 0 0 rgba(22,166,196,0.5);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(22,166,196,0.45); }
+    70%{ box-shadow: 0 0 0 7px rgba(22,166,196,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(22,166,196,0); }
+  }
+  .brand h1{ font-size: 16px; font-weight: 700; letter-spacing: 0.01em; display:flex; align-items:center; gap:8px; }
+  .brand h1 .co{ color: var(--blue); }
+  .brand p{ font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+  .status-pill{
+    font-size: 11px; padding: 5px 11px; border-radius: 20px; font-weight:600;
+    border: 1px solid var(--line); color: var(--muted); background: var(--paper);
+  }
+  .status-pill.on{ color: #2F7A1B; border-color: rgba(76,154,42,0.3); background: rgba(76,154,42,0.08); }
+  .status-pill.off{ color: var(--critical); border-color: rgba(193,58,46,0.25); background: rgba(193,58,46,0.06); }
+
+  /* ---------- Ticker (activity strip) ---------- */
+  .ticker-wrap{
+    background: var(--surface); border-bottom: 1px solid var(--line);
+    overflow: hidden; white-space: nowrap; position: relative; height: 32px;
+  }
+  .ticker-wrap::before, .ticker-wrap::after{
+    content:""; position:absolute; top:0; bottom:0; width:70px; z-index:2; pointer-events:none;
+  }
+  .ticker-wrap::before{ left:0; background: linear-gradient(90deg, var(--surface), transparent); }
+  .ticker-wrap::after{ right:0; background: linear-gradient(270deg, var(--surface), transparent); }
+  .ticker{
+    display:inline-flex; gap:36px; align-items:center; height:32px;
+    animation: scroll-left 28s linear infinite;
+    padding-left: 100%;
+  }
+  .ticker span{ font-size: 11.5px; color: var(--muted); }
+  .ticker span b{ color: var(--ink); font-weight:600; }
+  @keyframes scroll-left{ from{ transform: translateX(0);} to{ transform: translateX(-100%);} }
+
+  /* ---------- Layout ---------- */
+  main{ padding: 22px 28px 60px; display:flex; flex-direction:column; gap:18px; }
+
+  .stat-grid{ display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; }
+  .stat-card{
+    background: var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding: 16px 18px; border-top: 3px solid transparent;
+  }
+  .stat-card .label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; font-weight:600; }
+  .stat-card .value{ font-size: 30px; font-weight:700; font-family:'Space Grotesk',sans-serif; margin-top:6px; color: var(--ink); }
+  .stat-card.alerts{ border-top-color: var(--critical); }
+  .stat-card.alerts .value{ color: var(--critical); }
+  .stat-card.live{ border-top-color: var(--cyan); }
+  .stat-card.live .value{ color: var(--blue); }
+
+  .grid-2{ display:grid; grid-template-columns: 1.5fr 1fr; gap:16px; align-items:start; }
+
+  .panel{
+    background: var(--surface); border:1px solid var(--line); border-radius:10px;
+    overflow:hidden;
+  }
+  .panel-head{
+    padding: 13px 18px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .panel-head h2{ font-size:13.5px; font-weight:600; color: var(--ink); }
+  .panel-head .count{ font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace; }
+
+  table{ width:100%; border-collapse: collapse; font-size:12.5px; }
+  thead th{
+    text-align:left; padding: 10px 16px; font-size:10.5px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid var(--line);
+    position:sticky; top:0; background: var(--surface);
+  }
+  tbody td{ padding: 10px 16px; border-bottom:1px solid var(--paper); font-family:'IBM Plex Mono',monospace; color: var(--ink); }
+  tbody tr:hover{ background: #FAFBFA; }
+  .alert-table-wrap{ max-height: 420px; overflow-y:auto; }
+
+  .chip{
+    display:inline-flex; align-items:center; gap:5px; padding: 3px 10px; border-radius: 20px;
+    font-size: 10.5px; font-weight:700; font-family:'IBM Plex Sans',sans-serif;
+  }
+  .chip::before{ content:""; width:6px; height:6px; border-radius:50%; }
+
+  .chart-box{ padding: 18px; height: 220px; }
+  .empty{ padding: 32px; text-align:center; color: var(--muted); font-size:12.5px; }
+
+  /* ---------- Toasts ---------- */
+  .toast-stack{
+    position: fixed; bottom: 20px; right: 20px; display:flex; flex-direction:column;
+    gap:10px; z-index: 999; width: 320px;
+  }
+  .toast{
+    background: var(--surface); border:1px solid var(--line); border-left: 4px solid var(--critical);
+    border-radius: 8px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(16,42,67,0.12);
+    animation: slide-in 0.25s ease-out;
+  }
+  @keyframes slide-in{ from{ transform: translateX(30px); opacity:0;} to{ transform: translateX(0); opacity:1;} }
+  .toast .t-head{ display:flex; justify-content:space-between; font-size:12px; font-weight:700; color: var(--ink); }
+  .toast .t-body{ font-size:11.5px; color:var(--muted); margin-top:4px; font-family:'IBM Plex Mono',monospace; }
+
+  ::-webkit-scrollbar{ width:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
+
+  @media (max-width: 900px){
+    .stat-grid{ grid-template-columns: repeat(2,1fr); }
+    .grid-2{ grid-template-columns: 1fr; }
+  }
+
+  /* ---------- Login overlay ---------- */
+  #loginOverlay{
+    position: fixed; inset: 0; background: var(--paper); z-index: 1000;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .login-card{
+    width: 380px; background: var(--surface); border:1px solid var(--line);
+    border-radius: 14px; padding: 0 0 26px; box-shadow: 0 24px 60px rgba(16,42,67,0.14);
+    overflow: hidden;
+  }
+  .login-card .rule{ margin-bottom: 22px; }
+  .login-card .login-body{ padding: 0 28px; }
+  .login-card .login-brand{ display:flex; align-items:center; gap:12px; margin-bottom: 20px; }
+  .login-card h2{ font-size:17px; font-weight:700; margin-bottom:3px; color: var(--ink); }
+  .login-card p.sub{ font-size:12px; color:var(--muted); margin-bottom:22px; }
+  .login-card label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; font-weight:600; display:block; margin-bottom:5px; }
+  .login-card input{
+    width:100%; background: var(--paper); border:1px solid var(--line); color:var(--ink);
+    padding: 10px 12px; border-radius:7px; font-size:13px; margin-bottom:14px; font-family:'IBM Plex Mono',monospace;
+  }
+  .login-card input:focus{ outline:none; border-color: var(--cyan); background: var(--surface); }
+  .login-card button{
+    width:100%; background: var(--blue); color:#fff; border:none; font-weight:600;
+    padding: 11px; border-radius:7px; font-size:13.5px; cursor:pointer; margin-top:4px;
+    font-family:'Space Grotesk',sans-serif;
+  }
+  .login-card button:hover{ background: #163f7d; }
+  .login-card .toggle-mode{
+    text-align:center; margin-top:16px; font-size:11.5px; color:var(--muted); cursor:pointer;
+  }
+  .login-card .toggle-mode b{ color: var(--blue); }
+  .login-error{
+    background: rgba(193,58,46,0.08); border:1px solid rgba(193,58,46,0.25); color:var(--critical);
+    padding:9px 11px; border-radius:6px; font-size:11.5px; margin-bottom:14px; display:none;
+  }
+  .login-hint{
+    font-size: 10.5px; color: var(--muted); margin-top:18px; padding-top:14px; border-top:1px dashed var(--line);
+    line-height:1.6;
+  }
+
+  /* ---------- User badge + delete btn ---------- */
+  .user-badge{
+    display:flex; align-items:center; gap:9px; font-size:12px; color:var(--muted);
+    border:1px solid var(--line); padding:6px 12px; border-radius:20px;
+  }
+  .role-tag{
+    font-size:9.5px; font-weight:700; text-transform:uppercase; padding:2px 8px; border-radius:10px;
+  }
+  .role-tag.admin{ background: rgba(193,58,46,0.1); color: var(--critical); }
+  .role-tag.viewer{ background: rgba(22,166,196,0.12); color: var(--cyan); }
+  .logout-btn{ background:none; border:none; color:var(--muted); cursor:pointer; font-size:12px; text-decoration:underline; }
+  .del-btn{
+    background: rgba(193,58,46,0.08); color: var(--critical); border:1px solid rgba(193,58,46,0.25);
+    border-radius:5px; padding:3px 8px; font-size:10.5px; cursor:pointer; font-family:'IBM Plex Sans',sans-serif;
+  }
+
+  footer.attrib{
+    text-align:center; font-size:11px; color: var(--muted); padding: 18px 0 30px;
+  }
+
+  /* ---------- Search & filter toolbar (History table) ---------- */
+  .table-toolbar{
+    display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+    padding: 12px 18px; border-bottom:1px solid var(--line); background: var(--surface);
+  }
+  .table-toolbar input[type="text"],
+  .table-toolbar input[type="date"],
+  .table-toolbar select{
+    background: var(--paper); border:1px solid var(--line); color:var(--ink);
+    padding: 7px 10px; border-radius:7px; font-size:12px; font-family:'IBM Plex Sans',sans-serif;
+  }
+  .table-toolbar input[type="text"]{ flex:1 1 220px; font-family:'IBM Plex Mono',monospace; }
+  .table-toolbar input[type="text"]:focus,
+  .table-toolbar input[type="date"]:focus,
+  .table-toolbar select:focus{ outline:none; border-color: var(--cyan); }
+  .table-toolbar .clear-btn{
+    background: none; border:1px solid var(--line); color:var(--muted); cursor:pointer;
+    padding: 7px 12px; border-radius:7px; font-size:11.5px; font-family:'IBM Plex Sans',sans-serif;
+  }
+  .table-toolbar .clear-btn:hover{ border-color: var(--critical); color: var(--critical); }
+</style>
+</head>
+<body>
+
+<div id="loginOverlay">
+  <div class="login-card">
+    <div class="rule"></div>
+    <div class="login-body">
+      <div class="login-brand">
+        <img class="brand-logo login-logo" src="holcim-logo.png" alt="Holcim">
+        <div>
+          <h2 id="formTitle">Login</h2>
+          <p class="sub" style="margin-bottom:0;">Network Security Console</p>
+        </div>
+      </div>
+
+      <div class="login-error" id="loginError"></div>
+
+      <form id="authForm">
+        <label>Username</label>
+        <input type="text" id="loginUsername" autocomplete="username" required>
+        <label>Password</label>
+        <input type="password" id="loginPassword" autocomplete="current-password" required>
+        <button type="submit" id="authSubmitBtn">Login</button>
+      </form>
+
+      <div class="toggle-mode" id="toggleMode">Don't have an account? <b>Create a viewer account</b></div>
+
+      <div class="login-hint">
+        Default admin account (created on first backend launch):<br>
+        <span class="mono">admin / admin123</span> — change this before production use.
+      </div>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="brand">
+    <img class="brand-logo" src="holcim-logo.png" alt="Holcim">
+    <div>
+      <h1>Network Security Console <span class="brand-dot" id="brandDot"></span></h1>
+      <p>Real-time network monitoring and intrusion detection</p>
+    </div>
+  </div>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <span class="status-pill off" id="statusPill">disconnected</span>
+    <div class="user-badge" id="userBadge" style="display:none;">
+      <span id="userBadgeName"></span>
+      <span class="role-tag" id="userBadgeRole"></span>
+      <button class="logout-btn" id="logoutBtn">logout</button>
+    </div>
+  </div>
+</header>
+<div class="rule"></div>
+
+<div class="ticker-wrap">
+  <div class="ticker" id="ticker">
+    <span>Waiting for backend connection…</span>
+  </div>
+</div>
+
+<main>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="label">Total Requests</div>
+      <div class="value mono" id="statRequests">0</div>
+    </div>
+    <div class="stat-card alerts">
+      <div class="label">Total Alerts</div>
+      <div class="value mono" id="statAlerts">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Alert Rate</div>
+      <div class="value mono" id="statRate">0%</div>
+    </div>
+    <div class="stat-card live">
+      <div class="label">Connected Clients</div>
+      <div class="value mono" id="statClients">0</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Live Alert Feed</h2>
+        <span class="count mono" id="alertCount">0 alerts</span>
+      </div>
+      <div class="alert-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Time</th><th>Type</th><th>Confidence</th><th>Severity</th>
+            </tr>
+          </thead>
+          <tbody id="alertsBody">
+            <tr><td colspan="5" class="empty">No alerts yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div class="panel">
+        <div class="panel-head"><h2>Severity Distribution</h2></div>
+        <div class="chart-box"><canvas id="severityChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Predictions by Class</h2></div>
+        <div class="chart-box"><canvas id="classChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Alert History (Database)</h2>
+      <button class="logout-btn" id="refreshHistoryBtn" style="text-decoration:none; border:1px solid var(--line); padding:4px 10px; border-radius:6px;">↻ Refresh</button>
+    </div>
+    <div class="table-toolbar">
+      <input type="text" id="historySearch" placeholder="Search by type, severity, timestamp, source...">
+      <select id="filterSeverity">
+        <option value="ALL">All Severities</option>
+        <option value="NONE">None</option>
+        <option value="MEDIUM">Medium</option>
+        <option value="HIGH">High</option>
+        <option value="CRITICAL">Critical</option>
+      </select>
+      <select id="filterType">
+        <option value="ALL">All Attack Types</option>
+      </select>
+      <input type="date" id="filterDate" title="Filter by date">
+      <button type="button" class="clear-btn" id="clearFiltersBtn">Clear filters</button>
+    </div>
+    <div class="alert-table-wrap">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Timestamp</th><th>Type</th><th>Severity</th><th>Confidence</th><th>Source</th><th></th></tr>
+        </thead>
+        <tbody id="historyBody">
+          <tr><td colspan="7" class="empty">Log in to load history</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<footer class="attrib">Final year engineering project · ENSIASD Taroudant — intrusion detection pipeline based on the IDS 2025 dataset</footer>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+const SEVERITY_COLOR = { NONE:"#4C9A2A", MEDIUM:"#C88400", HIGH:"#CC6A1E", CRITICAL:"#C13A2E" };
+let socket = null;
+let severityChart, classChart;
+const severityCounts = { NONE:0, MEDIUM:0, HIGH:0, CRITICAL:0 };
+const classCounts = {};
+
+let apiBase   = localStorage.getItem('ids_api')   || 'http://localhost:5000';
+let authToken = localStorage.getItem('ids_token') || null;
+let currentUser = null;
+try { currentUser = JSON.parse(localStorage.getItem('ids_user') || 'null'); } catch(e){ currentUser = null; }
+let isRegisterMode = false;
+
+function authHeaders(){
+  return authToken ? { 'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json' }
+                    : { 'Content-Type': 'application/json' };
+}
+
+/* ---------- Charts ---------- */
+function initCharts(){
+  try{
+  const sevCtx = document.getElementById('severityChart').getContext('2d');
+  severityChart = new Chart(sevCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['None','Medium','High','Critical'],
+      datasets: [{
+        data: [0,0,0,0],
+        backgroundColor: [SEVERITY_COLOR.NONE, SEVERITY_COLOR.MEDIUM, SEVERITY_COLOR.HIGH, SEVERITY_COLOR.CRITICAL],
+        borderColor: '#ffffff', borderWidth: 2
+      }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ color:'#64748B', font:{size:11}, boxWidth:10 } } }
+    }
+  });
+
+  const clsCtx = document.getElementById('classChart').getContext('2d');
+  classChart = new Chart(clsCtx, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: '#1B4F9C', borderRadius: 4 }] },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      indexAxis: 'y',
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ ticks:{ color:'#64748B', font:{size:10} }, grid:{ color:'#E2E6E5' } },
+        y:{ ticks:{ color:'#102A43', font:{size:11} }, grid:{ display:false } }
+      }
+    }
+  });
+  }catch(e){
+    console.error('initCharts failed (Chart.js likely failed to load):', e);
+  }
+}
+
+function addTickerLine(text){
+  const el = document.getElementById('ticker');
+  const span = document.createElement('span');
+  span.innerHTML = text;
+  el.appendChild(span);
+  while(el.children.length > 40){ el.removeChild(el.firstChild); }
+}
+
+function pushToast(alert){
+  const stack = document.getElementById('toastStack');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.style.borderLeftColor = alert.color || SEVERITY_COLOR.CRITICAL;
+  el.innerHTML = `
+    <div class="t-head"><span>🚨 ${alert.prediction}</span><span>${alert.severity}</span></div>
+    <div class="t-body">confidence ${(alert.confidence*100).toFixed(1)}% · ${new Date(alert.timestamp).toLocaleTimeString()}</div>
+  `;
+  stack.prepend(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition='opacity .4s'; setTimeout(()=>el.remove(), 400); }, 6000);
+  while(stack.children.length > 5){ stack.removeChild(stack.lastChild); }
+}
+
+function prependAlertRow(alert){
+  const body = document.getElementById('alertsBody');
+  if(body.querySelector('.empty')){ body.innerHTML = ''; }
+
+  const tr = document.createElement('tr');
+  const color = SEVERITY_COLOR[alert.severity] || '#64748B';
+  tr.innerHTML = `
+    <td>${alert.alert_id ?? ''}</td>
+    <td>${new Date(alert.timestamp).toLocaleTimeString()}</td>
+    <td>${alert.prediction}</td>
+    <td>${(alert.confidence*100).toFixed(1)}%</td>
+    <td><span class="chip" style="background:${color}22; color:${color};"><span style="background:${color}"></span>${alert.severity}</span></td>
+  `;
+  body.prepend(tr);
+  while(body.children.length > 100){ body.removeChild(body.lastChild); }
+}
+
+function updateSeverityChart(sev){
+  if(severityCounts[sev] === undefined) return;
+  severityCounts[sev]++;
+  if(!severityChart) return;
+  severityChart.data.datasets[0].data = [
+    severityCounts.NONE, severityCounts.MEDIUM, severityCounts.HIGH, severityCounts.CRITICAL
+  ];
+  severityChart.update('none');
+}
+
+function updateClassChart(cls){
+  classCounts[cls] = (classCounts[cls] || 0) + 1;
+  if(!classChart) return;
+  const entries = Object.entries(classCounts).sort((a,b) => b[1]-a[1]).slice(0,7);
+  classChart.data.labels = entries.map(e => e[0]);
+  classChart.data.datasets[0].data = entries.map(e => e[1]);
+  classChart.update('none');
+}
+
+function setStatus(connected){
+  const pill = document.getElementById('statusPill');
+  const dot = document.getElementById('brandDot');
+  pill.textContent = connected ? 'connected' : 'disconnected';
+  pill.className = 'status-pill ' + (connected ? 'on' : 'off');
+  dot.classList.toggle('live', connected);
+}
+
+/* ---------- Socket (real-time feed — public, read-only) ---------- */
+function connectSocket(url){
+  if(socket){ socket.disconnect(); }
+  socket = io(url, { transports: ['polling', 'websocket'] });
+
+  socket.on('connect', () => { setStatus(true); addTickerLine(`<b>Connected</b> to backend`); });
+  socket.on('disconnect', () => setStatus(false));
+  socket.on('connect_error', () => setStatus(false));
+
+  socket.on('stats_update', (d) => {
+    document.getElementById('statRequests').textContent = d.total_requests;
+    document.getElementById('statAlerts').textContent = d.total_alerts;
+    document.getElementById('statClients').textContent = d.connected_clients;
+    const rate = d.total_requests ? (d.total_alerts / d.total_requests * 100).toFixed(1) : 0;
+    document.getElementById('statRate').textContent = rate + '%';
+  });
+
+  socket.on('alerts_history', (d) => {
+    (d.alerts || []).forEach(a => prependAlertRow(a));
+    document.getElementById('alertCount').textContent = (d.alerts || []).length + ' alerts (live)';
+  });
+
+  socket.on('new_prediction', (p) => {
+    const el = document.getElementById('statRequests');
+    el.textContent = (parseInt(el.textContent || '0') + 1);
+    const icon = p.alert ? '🚨' : '✅';
+    addTickerLine(`${icon} <b>${p.prediction}</b> · confidence ${(p.confidence*100).toFixed(0)}% · ${p.severity}`);
+  });
+
+  socket.on('alert', (a) => {
+    prependAlertRow(a);
+    updateSeverityChart(a.severity);
+    updateClassChart(a.prediction);
+    pushToast(a);
+    document.getElementById('statAlerts').textContent = a.alert_id;
+    document.getElementById('alertCount').textContent = a.alert_id + ' alerts (live)';
+  });
+}
+
+/* ---------- Alert History (DB, JWT-protected) ---------- */
+function renderHistoryRow(a){
+  const color = SEVERITY_COLOR[a.severity] || '#64748B';
+  const isAdmin = currentUser && currentUser.role === 'admin';
+  const acquitBtn = a.acquittee
+    ? `<span style="color:var(--none); font-size:11px;">✓ ${a.acquittee_par || ''}</span>`
+    : `<button class="del-btn" style="background:rgba(0,217,255,0.1); color:var(--cyan); border-color:rgba(0,217,255,0.3);" onclick="acquitterAlert(${a.id})">acknowledge</button>`;
+  const delBtn = isAdmin
+    ? `<button class="del-btn" onclick="deleteAlert(${a.id})">delete</button>`
+    : '';
+  return `<tr id="hist-row-${a.id}">
+    <td>${a.id}</td>
+    <td>${new Date(a.timestamp).toLocaleString()}</td>
+    <td>${a.prediction}</td>
+    <td><span class="chip" style="background:${color}22; color:${color};"><span style="background:${color}"></span>${a.severity}</span></td>
+    <td>${(a.confidence*100).toFixed(1)}%</td>
+    <td>${a.source}</td>
+    <td style="display:flex; gap:6px;">${acquitBtn} ${delBtn}</td>
+  </tr>`;
+}
+
+function hydrateLiveFromHistory(alerts){
+  // Reset then recompute from the persistent history (DB)
+  severityCounts.NONE = 0; severityCounts.MEDIUM = 0; severityCounts.HIGH = 0; severityCounts.CRITICAL = 0;
+  for (const k in classCounts) delete classCounts[k];
+
+  const body = document.getElementById('alertsBody');
+  body.innerHTML = '';
+
+  // Replay oldest to newest for a consistent order/count
+  const ordered = [...alerts].reverse();
+  for(const a of ordered){
+    if(severityCounts[a.severity] !== undefined) severityCounts[a.severity]++;
+    classCounts[a.prediction] = (classCounts[a.prediction] || 0) + 1;
+    prependAlertRow({
+      alert_id: a.id, timestamp: a.timestamp, prediction: a.prediction,
+      confidence: a.confidence, severity: a.severity
+    });
+  }
+  document.getElementById('alertCount').textContent = alerts.length + ' alerts';
+
+  if(severityChart){
+    severityChart.data.datasets[0].data = [
+      severityCounts.NONE, severityCounts.MEDIUM, severityCounts.HIGH, severityCounts.CRITICAL
+    ];
+    severityChart.update('none');
+  }
+
+  if(classChart){
+    const entries = Object.entries(classCounts).sort((a,b) => b[1]-a[1]).slice(0,7);
+    classChart.data.labels = entries.map(e => e[0]);
+    classChart.data.datasets[0].data = entries.map(e => e[1]);
+    classChart.update('none');
+  }
+}
+
+/* ---------- Search & filter (History table) ---------- */
+let historyData = [];   // full dataset from the last /alerts/history fetch
+
+function populateTypeFilterOptions(){
+  const select = document.getElementById('filterType');
+  const current = select.value;
+  const types = [...new Set(historyData.map(a => a.prediction))].sort();
+
+  select.innerHTML = '<option value="ALL">All Attack Types</option>' +
+    types.map(t => `<option value="${t}">${t}</option>`).join('');
+
+  // keep the previous selection if it's still a valid option
+  if(types.includes(current)) select.value = current;
+}
+
+function applyHistoryFilters(){
+  const search   = document.getElementById('historySearch').value.trim().toLowerCase();
+  const severity = document.getElementById('filterSeverity').value;
+  const type     = document.getElementById('filterType').value;
+  const date     = document.getElementById('filterDate').value; // 'YYYY-MM-DD' or ''
+
+  const filtered = historyData.filter(a => {
+    if(severity !== 'ALL' && a.severity !== severity) return false;
+    if(type !== 'ALL' && a.prediction !== type) return false;
+    if(date){
+      const rowDate = new Date(a.timestamp).toISOString().slice(0, 10);
+      if(rowDate !== date) return false;
+    }
+    if(search){
+      const haystack = [
+        a.id, a.prediction, a.severity, a.source,
+        new Date(a.timestamp).toLocaleString(),
+        (a.confidence*100).toFixed(1) + '%'
+      ].join(' ').toLowerCase();
+      if(!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+
+  const body = document.getElementById('historyBody');
+  if(!filtered.length){
+    body.innerHTML = historyData.length
+      ? '<tr><td colspan="7" class="empty">No alerts match your filters</td></tr>'
+      : '<tr><td colspan="7" class="empty">No alerts recorded</td></tr>';
+  } else {
+    body.innerHTML = filtered.map(renderHistoryRow).join('');
+  }
+}
+
+document.getElementById('historySearch').addEventListener('input', applyHistoryFilters);
+document.getElementById('filterSeverity').addEventListener('change', applyHistoryFilters);
+document.getElementById('filterType').addEventListener('change', applyHistoryFilters);
+document.getElementById('filterDate').addEventListener('change', applyHistoryFilters);
+document.getElementById('clearFiltersBtn').addEventListener('click', () => {
+  document.getElementById('historySearch').value = '';
+  document.getElementById('filterSeverity').value = 'ALL';
+  document.getElementById('filterType').value = 'ALL';
+  document.getElementById('filterDate').value = '';
+  applyHistoryFilters();
+});
+
+async function fetchHistory(){
+  try{
+    const res = await fetch(`${apiBase}/alerts/history?limit=100`, { headers: authHeaders() });
+    if(res.status === 401){ return doLogout(); }
+    const data = await res.json();
+
+    historyData = data.alerts || [];
+    populateTypeFilterOptions();
+    applyHistoryFilters();
+
+    if(data.alerts) hydrateLiveFromHistory(data.alerts);
+  }catch(e){ console.error('fetchHistory error', e); }
+}
+
+async function acquitterAlert(id){
+  try{
+    const res = await fetch(`${apiBase}/alerts/${id}/acquitter`, { method:'POST', headers: authHeaders() });
+    if(res.status === 401){ return doLogout(); }
+    await fetchHistory();
+  }catch(e){ console.error(e); }
+}
+
+async function deleteAlert(id){
+  if(!confirm(`Delete alert #${id}?`)) return;
+  try{
+    const res = await fetch(`${apiBase}/alerts/${id}`, { method:'DELETE', headers: authHeaders() });
+    if(res.status === 401){ return doLogout(); }
+    await fetchHistory();
+  }catch(e){ console.error(e); }
+}
+
+/* ---------- Auth: login / register / logout ---------- */
+function showLoginError(msg){
+  const el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideLoginError(){
+  document.getElementById('loginError').style.display = 'none';
+}
+
+function onLoggedIn(){
+  document.getElementById('loginOverlay').style.display = 'none';
+  document.getElementById('userBadge').style.display = 'flex';
+  document.getElementById('userBadgeName').textContent = currentUser.username;
+  const roleEl = document.getElementById('userBadgeRole');
+  roleEl.textContent = currentUser.role;
+  roleEl.className = 'role-tag ' + currentUser.role;
+
+  initCharts();
+  connectSocket(apiBase);
+  fetchHistory();
+}
+
+function doLogout(){
+  authToken = null; currentUser = null;
+  localStorage.removeItem('ids_token');
+  localStorage.removeItem('ids_user');
+  if(socket){ socket.disconnect(); socket = null; }
+  document.getElementById('userBadge').style.display = 'none';
+  document.getElementById('loginOverlay').style.display = 'flex';
+  document.getElementById('historyBody').innerHTML = '<tr><td colspan="7" class="empty">Log in to load history</td></tr>';
+}
+
+document.getElementById('toggleMode').addEventListener('click', () => {
+  isRegisterMode = !isRegisterMode;
+  document.getElementById('formTitle').textContent = isRegisterMode ? 'Create account' : 'Login';
+  document.getElementById('authSubmitBtn').textContent = isRegisterMode ? 'Create account' : 'Login';
+  document.getElementById('toggleMode').innerHTML = isRegisterMode
+    ? 'Already have an account? <b>Login</b>'
+    : 'Don\'t have an account? <b>Create a viewer account</b>';
+  hideLoginError();
+});
+
+document.getElementById('authForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideLoginError();
+
+  const url      = apiBase;
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const btn = document.getElementById('authSubmitBtn');
+  btn.disabled = true;
+
+  try{
+    if(isRegisterMode){
+      const res = await fetch(`${url}/auth/register`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if(!res.ok){ showLoginError(data.error || 'Error creating account'); return; }
+      isRegisterMode = false;
+      document.getElementById('toggleMode').click();
+      showLoginError('Account created ✅ — please log in now');
+      document.getElementById('loginError').style.color = 'var(--none)';
+      return;
+    }
+
+    const res = await fetch(`${url}/auth/login`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if(!res.ok){ showLoginError(data.error || 'Invalid credentials'); return; }
+
+    apiBase = url; authToken = data.token; currentUser = data.user;
+    localStorage.setItem('ids_api', apiBase);
+    localStorage.setItem('ids_token', authToken);
+    localStorage.setItem('ids_user', JSON.stringify(currentUser));
+    onLoggedIn();
+  }catch(err){
+    showLoginError('Unable to reach the server. Please try again later.');
+  }finally{
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', doLogout);
+document.getElementById('refreshHistoryBtn').addEventListener('click', fetchHistory);
+
+/* ---------- Auto-login if a token is already stored ---------- */
+(async function tryAutoLogin(){
+  if(!authToken || !currentUser){ return; }
+  try{
+    const res = await fetch(`${apiBase}/auth/me`, { headers: authHeaders() });
+    if(res.ok){ onLoggedIn(); } else { doLogout(); }
+  }catch(e){ doLogout(); }
+})();
+</script>
+
+</body>
+</html>
