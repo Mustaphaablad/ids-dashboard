@@ -346,7 +346,7 @@ def seed_classes_attaque():
             for cls in class_names:
                 sev = SEVERITY.get(cls, "UNKNOWN")
                 db.add(ClasseAttaque(nom_classe=cls, niveau_severite=sev,
-                                      couleur=SEVERITY_COLOR.get(sev)))
+                                    couleur=SEVERITY_COLOR.get(sev)))
             db.commit()
         CLASS_ID_MAP = {c.nom_classe: c.id for c in db.query(ClasseAttaque).all()}
     finally:
@@ -1033,7 +1033,6 @@ def predict_flow():
         "note": "missing features set to 0.0 by default"
     })
 # ============================================================
-
 # ============================================================
 # socketio.run() instead of app.run()
 # starts Flask and the SocketIO server at the same time
