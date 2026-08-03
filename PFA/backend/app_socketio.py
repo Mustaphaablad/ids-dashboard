@@ -97,17 +97,26 @@ print(f"✅ SocketIO: enabled")
 # ============================================================
 # Step 2b — Database (SQLite + SQLAlchemy ORM)
 # ============================================================
-# SQLite here is just for dev/PFA (a single .db file, no server).
-# In production, you'd only need to swap the engine for PostgreSQL:
-#   create_engine("postgresql://user:pass@host:5432/dbname")
-# ...the rest of the code (models, queries) works unchanged,
-# since SQLAlchemy is the layer that abstracts the DB away.
+import os
 
-DB_PATH = "sqlite:///ids_alerts.db"
-engine = create_engine(DB_PATH, connect_args={"check_same_thread": False})
-SessionLocal = scoped_session(sessionmaker(bind=engine, autoflush=False, autocommit=False))
+DB_PATH = os.getenv("DATABASE_URL", "sqlite:///ids_alerts.db")
+
+if DB_PATH.startswith("postgres://"):       # startswitch test if the variable starts with the postgres:// or ...
+    DB_PATH = DB_PATH.replace("postgres://", "postgresql://", 1)
+
+if DB_PATH.startswith("sqlite"):
+    engine = create_engine(
+        DB_PATH,
+        connect_args={"check_same_thread": False}
+    )
+else:
+    engine = create_engine(DB_PATH)
+
+SessionLocal = scoped_session(
+    sessionmaker(bind=engine, autoflush=False, autocommit=False)
+)
+
 Base = declarative_base()
-
 
 class ClasseAttaque(Base):
     """
