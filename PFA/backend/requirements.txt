@@ -10,3 +10,4 @@ PyJWT>=2.8
 PyJWT>=2.8
 gunicorn>=23.0
 eventlet>=0.36
+psycopg2-binary>=2.9
